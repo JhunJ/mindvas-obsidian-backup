@@ -1,0 +1,62 @@
+{
+  "mindvas:mindmap-add-child": [
+    {
+      "modifiers": ["Mod"],
+      "key": "."
+    }
+  ],
+  "mindvas:mindmap-add-sibling": [
+    {
+      "modifiers": ["Mod"],
+      "key": "Enter"
+    }
+  ],
+  "mindvas:mindmap-edit-node": [
+    {
+      "modifiers": [],
+      "key": "F2"
+    }
+  ],
+  "mindvas:mindmap-delete-node": [
+    {
+      "modifiers": ["Mod"],
+      "key": "Backspace"
+    }
+  ],
+  "mindvas:mindmap-nav-right": [
+    {
+      "modifiers": ["Alt"],
+      "key": "ArrowRight"
+    }
+  ],
+  "mindvas:mindmap-nav-left": [
+    {
+      "modifiers": ["Alt"],
+      "key": "ArrowLeft"
+    }
+  ],
+  "mindvas:mindmap-nav-next-sibling": [
+    {
+      "modifiers": ["Alt"],
+      "key": "ArrowDown"
+    }
+  ],
+  "mindvas:mindmap-nav-prev-sibling": [
+    {
+      "modifiers": ["Alt"],
+      "key": "ArrowUp"
+    }
+  ],
+  "mindvas:mindmap-group-selection": [
+    {
+      "modifiers": ["Mod"],
+      "key": "g"
+    }
+  ],
+  "mindvas:mindmap-graphic-view": [
+    {
+      "modifiers": ["Mod", "Shift"],
+      "key": "g"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "autoResize": false,
+  "autoLayout": false,
+  "autoColor": true,
+  "horizontalGap": 80,
+  "verticalGap": 20,
+  "defaultNodeWidth": 300,
+  "defaultNodeHeight": 60,
+  "maxNodeHeight": 300,
+  "defaultMindmapMode": true,
+  "navigationZoomPadding": 80,
+  "mouseNavigation": false
+}
