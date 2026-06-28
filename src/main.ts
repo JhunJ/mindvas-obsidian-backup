@@ -878,6 +878,7 @@ export default class CanvasMindMapPlugin extends Plugin {
 			}
 			refreshBranchFoldUI(canvas, this.layoutEngine, () => this.isMindmapCanvas(canvas));
 			this.showOutline(canvas);
+			this.trackedRaf(() => this.refocusCanvas(canvas));
 			if (isPhone()) this.mobileToolbar?.setVisible(true);
 		} else {
 			this.hideOutline();
@@ -1159,34 +1160,49 @@ export default class CanvasMindMapPlugin extends Plugin {
 
 	private showOutline(canvas: Canvas, force = false): void {
 		const leaves = this.app.workspace.getLeavesOfType(OUTLINE_VIEW_TYPE);
+
 		if (leaves.length > 0) {
 			this.refreshOutline(canvas);
-			void this.revealOutline(leaves[0]);
+			// Don't steal focus from canvas on every open — keeps toolbar buttons visible.
+			if (force) void this.revealOutline(leaves[0], canvas);
 			return;
 		}
-		// On phones, don't auto-open — use command or toolbar
-		if (isPhone() && !force) return;
 
-		void this.openOutlinePanel(canvas);
+		// Mobile/tablet: never auto-split; open via command or FAB menu only.
+		if (isMobileApp() && !force) return;
+
+		if (!this.settings.autoOpenOutline && !force) return;
+
+		void this.openOutlinePanel(canvas, true);
 	}
 
-	private async openOutlinePanel(canvas: Canvas): Promise<void> {
-		let leaf = await ensureOutlineLeaf(this.app, OUTLINE_VIEW_TYPE);
+	private async openOutlinePanel(canvas: Canvas, reveal: boolean): Promise<void> {
+		let leaf = await ensureOutlineLeaf(this.app, OUTLINE_VIEW_TYPE, { reveal });
 		if (!leaf) return;
 
 		if (leaf.view?.getViewType() !== OUTLINE_VIEW_TYPE) {
 			await leaf.setViewState({ type: OUTLINE_VIEW_TYPE });
 		}
 
-		await this.revealOutline(leaf);
+		if (reveal) await this.revealOutline(leaf, canvas);
 		this.reorderOutlineToTop(leaf);
 		this.refreshOutline(canvas);
 	}
 
-	private async revealOutline(leaf: WorkspaceLeaf): Promise<void> {
+	private async revealOutline(leaf: WorkspaceLeaf, canvas?: Canvas): Promise<void> {
 		expandRightSidebar(this.app);
 		await this.app.workspace.revealLeaf(leaf);
 		this.reorderOutlineToTop(leaf);
+		this.refocusCanvas(canvas);
+	}
+
+	/** Keep canvas as the active leaf so other plugins' toolbar buttons stay mounted. */
+	private refocusCanvas(canvas?: Canvas): void {
+		const active = canvas ?? this.canvasApi.getActiveCanvas();
+		const leaf = active?.view?.leaf;
+		if (leaf) {
+			this.app.workspace.setActiveLeaf(leaf, { focus: false });
+		}
 	}
 
 	private hideOutline(): void {

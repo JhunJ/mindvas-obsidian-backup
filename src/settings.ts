@@ -10,6 +10,7 @@ export interface MindMapSettings {
 	defaultNodeHeight: number;
 	maxNodeHeight: number;
 	defaultMindmapMode: boolean;
+	autoOpenOutline: boolean;
 	navigationZoomPadding: number;
 	mouseNavigation: boolean;
 }
@@ -23,6 +24,7 @@ export const DEFAULT_SETTINGS: MindMapSettings = {
 	defaultNodeHeight: 60,
 	maxNodeHeight: 300,
 	defaultMindmapMode: true,
+	autoOpenOutline: true,
 	navigationZoomPadding: 200,
 	mouseNavigation: false,
 };
@@ -151,6 +153,18 @@ export class MindMapSettingTab extends PluginSettingTab {
 							this.plugin.settings.maxNodeHeight = num;
 							debouncedSave();
 						}
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Auto-open Map outline")
+			.setDesc("Open the Map outline panel when mindmap mode is active (desktop). On mobile/tablet, use the command or toolbar instead.")
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.autoOpenOutline)
+					.onChange(async (value) => {
+						this.plugin.settings.autoOpenOutline = value;
+						await this.plugin.saveSettings();
 					})
 			);
 

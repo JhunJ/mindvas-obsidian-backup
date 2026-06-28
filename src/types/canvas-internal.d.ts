@@ -182,6 +182,7 @@ export interface CanvasEdgeFileData {
 export interface CanvasView extends ItemView {
 	canvas: Canvas;
 	file: { path: string };
+	leaf: WorkspaceLeaf;
 }
 
 /** Minimal CodeMirror 6 EditorView interface for text extraction. */

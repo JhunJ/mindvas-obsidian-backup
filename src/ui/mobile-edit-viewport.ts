@@ -12,12 +12,14 @@ type CanvasWithViewport = Canvas & {
 	setViewport?: (tx: number, ty: number, zoom: number) => void;
 	markViewportChanged?: () => void;
 	panIntoView?: (...args: unknown[]) => void;
-	smartZoom?: (...args: unknown[]) => void;
 };
 
 /**
  * On mobile/tablet, Obsidian Canvas auto-zooms out when the keyboard opens for
- * card editing. Lock the viewport at the current zoom/pan while a node is edited.
+ * card editing. Block that auto-zoom while a node is actively being edited.
+ *
+ * Does NOT lock the viewport on mere taps — pan/zoom/wheel controls keep working
+ * until edit mode actually starts.
  */
 export function registerMobileEditViewportLock(canvas: Canvas): () => void {
 	if (!isMobileApp()) return () => {};
@@ -26,8 +28,8 @@ export function registerMobileEditViewportLock(canvas: Canvas): () => void {
 	const wrapper = canvas.wrapperEl;
 	if (!wrapper) return () => {};
 
-	let locked = false;
 	let saved: ViewportSnapshot | null = null;
+	let preEditSnapshot: ViewportSnapshot | null = null;
 	let pollTimer: ReturnType<typeof setInterval> | null = null;
 	let restoreRaf = 0;
 
@@ -70,18 +72,23 @@ export function registerMobileEditViewportLock(canvas: Canvas): () => void {
 		}
 	};
 
+	const clearEditLock = (): void => {
+		saved = null;
+		preEditSnapshot = null;
+		stopPoll();
+	};
+
 	const restoreViewport = (): void => {
-		if (!locked || !saved) return;
+		if (!saved || !anyNodeEditing()) return;
 		applyViewport(saved);
 	};
 
 	const scheduleRestore = (): void => {
-		if (!locked || !saved) return;
+		if (!saved || !anyNodeEditing()) return;
 		if (restoreRaf) cancelAnimationFrame(restoreRaf);
 		restoreRaf = requestAnimationFrame(() => {
 			restoreRaf = 0;
 			restoreViewport();
-			requestAnimationFrame(restoreViewport);
 		});
 	};
 
@@ -89,38 +96,31 @@ export function registerMobileEditViewportLock(canvas: Canvas): () => void {
 		stopPoll();
 		let ticks = 0;
 		pollTimer = setInterval(() => {
-			if (!locked || !saved) {
-				stopPoll();
+			if (!saved || !anyNodeEditing()) {
+				clearEditLock();
 				return;
 			}
 			restoreViewport();
 			ticks++;
-			if (ticks > 30 || !anyNodeEditing()) stopPoll();
+			if (ticks > 30) stopPoll();
 		}, 50);
 	};
 
-	const lockViewport = (): void => {
-		saved = snapshot();
-		locked = true;
+	const beginEditLock = (): void => {
+		if (!anyNodeEditing()) return;
+		saved = preEditSnapshot ?? snapshot();
 		scheduleRestore();
 		startPoll();
 	};
 
-	const unlockViewport = (): void => {
-		locked = false;
-		saved = null;
-		stopPoll();
-	};
-
-	const shouldBlockZoom = (): boolean => locked || anyNodeEditing();
-
-	const wrapNoZoom = <T extends (...args: never[]) => void>(orig: T): T => {
+	/** Block Obsidian's fit-to-card zoom during edit — not user pan/zoom/wheel. */
+	const wrapEditZoom = <T extends (...args: never[]) => void>(orig: T): T => {
 		const wrapped = ((...args: never[]) => {
-			if (shouldBlockZoom()) {
-				scheduleRestore();
+			if (!anyNodeEditing()) {
+				orig(...args);
 				return;
 			}
-			orig(...args);
+			scheduleRestore();
 		}) as T;
 		return wrapped;
 	};
@@ -129,52 +129,50 @@ export function registerMobileEditViewportLock(canvas: Canvas): () => void {
 	const origZoomToSelection = canvas.zoomToSelection.bind(canvas);
 	const origZoomToFit = canvas.zoomToFit?.bind(canvas);
 	const origPanIntoView = c.panIntoView?.bind(c);
-	const origSmartZoom = c.smartZoom?.bind(c);
 
-	canvas.zoomToBbox = wrapNoZoom(origZoomToBbox);
-	canvas.zoomToSelection = wrapNoZoom(origZoomToSelection);
-	if (origZoomToFit) canvas.zoomToFit = wrapNoZoom(origZoomToFit);
-	if (origPanIntoView) c.panIntoView = wrapNoZoom(origPanIntoView as (...args: never[]) => void);
-	if (origSmartZoom) c.smartZoom = wrapNoZoom(origSmartZoom as (...args: never[]) => void);
+	canvas.zoomToBbox = wrapEditZoom(origZoomToBbox);
+	canvas.zoomToSelection = wrapEditZoom(origZoomToSelection);
+	if (origZoomToFit) canvas.zoomToFit = wrapEditZoom(origZoomToFit);
+	if (origPanIntoView) c.panIntoView = wrapEditZoom(origPanIntoView as (...args: never[]) => void);
 
 	const onPointerDown = (e: PointerEvent) => {
 		if (e.pointerType === "mouse") return;
 		const target = e.target as HTMLElement;
 		if (!target.closest(".canvas-node")) return;
 		if (target.closest(".mindvas-fold-chevron")) return;
-		lockViewport();
+		// Remember viewport before Obsidian opens the editor — do not lock yet.
+		preEditSnapshot = snapshot();
 	};
 
 	const onFocusIn = (e: FocusEvent) => {
 		const target = e.target as HTMLElement;
 		if (!target.closest?.(".canvas-node")) return;
-		if (!locked) lockViewport();
-		else scheduleRestore();
+		queueMicrotask(() => beginEditLock());
 	};
 
 	const onFocusOut = () => {
 		setTimeout(() => {
-			if (!anyNodeEditing()) unlockViewport();
+			if (!anyNodeEditing()) clearEditLock();
 		}, 150);
 	};
 
 	const onViewportResize = () => {
-		if (locked) scheduleRestore();
+		if (anyNodeEditing()) scheduleRestore();
 	};
 
-	wrapper.addEventListener("pointerdown", onPointerDown, true);
+	const opts = { passive: true } as AddEventListenerOptions;
+	wrapper.addEventListener("pointerdown", onPointerDown, opts);
 	wrapper.addEventListener("focusin", onFocusIn, true);
 	wrapper.addEventListener("focusout", onFocusOut, true);
 	window.visualViewport?.addEventListener("resize", onViewportResize);
 
 	return () => {
-		unlockViewport();
+		clearEditLock();
 		canvas.zoomToBbox = origZoomToBbox;
 		canvas.zoomToSelection = origZoomToSelection;
 		if (origZoomToFit) canvas.zoomToFit = origZoomToFit;
 		if (origPanIntoView) c.panIntoView = origPanIntoView;
-		if (origSmartZoom) c.smartZoom = origSmartZoom;
-		wrapper.removeEventListener("pointerdown", onPointerDown, true);
+		wrapper.removeEventListener("pointerdown", onPointerDown, opts);
 		wrapper.removeEventListener("focusin", onFocusIn, true);
 		wrapper.removeEventListener("focusout", onFocusOut, true);
 		window.visualViewport?.removeEventListener("resize", onViewportResize);

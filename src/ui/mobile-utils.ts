@@ -31,10 +31,13 @@ export function syncMobileBodyClass(): void {
  */
 export async function ensureOutlineLeaf(
 	app: App,
-	viewType: string
+	viewType: string,
+	options?: { reveal?: boolean }
 ): Promise<WorkspaceLeaf | null> {
 	const existing = app.workspace.getLeavesOfType(viewType);
 	if (existing.length > 0) return existing[0];
+
+	const reveal = options?.reveal ?? false;
 
 	const ws = app.workspace as unknown as {
 		ensureSideLeaf?: (
@@ -49,7 +52,7 @@ export async function ensureOutlineLeaf(
 		try {
 			return await ws.ensureSideLeaf(viewType, "right", {
 				split: true,
-				reveal: true,
+				reveal,
 				active: false,
 			});
 		} catch (err) {
