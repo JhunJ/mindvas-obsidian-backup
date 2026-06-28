@@ -415,15 +415,18 @@ export class OutlineView extends ItemView {
 			}
 			const cn = node.canvasNode;
 			canvas.selectOnly(cn);
-			const pad = this.zoomPadding;
-			const cx = cn.x + cn.width / 2;
-			const cy = cn.y + cn.height / 2;
-			canvas.zoomToBbox({
-				minX: cx - pad,
-				minY: cy - pad,
-				maxX: cx + pad,
-				maxY: cy + pad,
-			});
+			// Mobile: select only — do not zoom away from the current viewport.
+			if (!isMobileApp()) {
+				const pad = this.zoomPadding;
+				const cx = cn.x + cn.width / 2;
+				const cy = cn.y + cn.height / 2;
+				canvas.zoomToBbox({
+					minX: cx - pad,
+					minY: cy - pad,
+					maxX: cx + pad,
+					maxY: cy + pad,
+				});
+			}
 		});
 
 		self.addEventListener("contextmenu", (e) => {

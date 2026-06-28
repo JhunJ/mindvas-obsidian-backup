@@ -22,6 +22,7 @@ import { getGroupIds, buildForest, findTreeForNode } from "./mindmap/tree-model"
 import { registerBranchFoldHandler, refreshBranchFoldUI, toggleBranchFold, collapseAllBranches, expandAllBranches } from "./mindmap/branch-fold";
 import { MobileToolbar } from "./ui/mobile-toolbar";
 import { isMobileApp, isPhone, isTablet, syncMobileBodyClass, safeRun, ensureOutlineLeaf, expandRightSidebar } from "./ui/mobile-utils";
+import { registerMobileEditViewportLock } from "./ui/mobile-edit-viewport";
 import { arrowShortcutExtension } from "./ui/arrow-shortcut";
 
 export default class CanvasMindMapPlugin extends Plugin {
@@ -64,6 +65,7 @@ export default class CanvasMindMapPlugin extends Plugin {
 	private lastNavCanvas: Canvas | null = null;
 	private cleanupNavHandler: (() => void) | null = null;
 	private cleanupBranchFoldHandler: (() => void) | null = null;
+	private cleanupMobileEditViewportHandler: (() => void) | null = null;
 	private mobileToolbar: MobileToolbar | null = null;
 
 	async onload(): Promise<void> {
@@ -525,6 +527,10 @@ export default class CanvasMindMapPlugin extends Plugin {
 			this.cleanupBranchFoldHandler();
 			this.cleanupBranchFoldHandler = null;
 		}
+		if (this.cleanupMobileEditViewportHandler) {
+			this.cleanupMobileEditViewportHandler();
+			this.cleanupMobileEditViewportHandler = null;
+		}
 		this.mobileToolbar?.unmount();
 		this.lastNavCanvas = null;
 		if (this.toggleBtnEl) {
@@ -588,6 +594,10 @@ export default class CanvasMindMapPlugin extends Plugin {
 			this.cleanupBranchFoldHandler();
 			this.cleanupBranchFoldHandler = null;
 		}
+		if (this.cleanupMobileEditViewportHandler) {
+			this.cleanupMobileEditViewportHandler();
+			this.cleanupMobileEditViewportHandler = null;
+		}
 		this.mobileToolbar?.unmount();
 
 		const canvas = this.canvasApi.getActiveCanvas();
@@ -612,6 +622,12 @@ export default class CanvasMindMapPlugin extends Plugin {
 
 		// Inject mindmap toggle button into canvas toolbar
 		this.injectToggleButton(canvas);
+
+		// Mobile/tablet: keep zoom/pan when keyboard opens for card editing
+		if (isMobileApp()) {
+			this.cleanupMobileEditViewportHandler =
+				registerMobileEditViewportLock(canvas);
+		}
 
 		// Ctrl+click zoom (desktop). Touch: node menu → "Zoom to branch".
 		this.cleanupClickHandler =

@@ -133,6 +133,11 @@ export interface Canvas {
 	}): void;
 	zoomToFit(): void;
 
+	setViewport?(tx: number, ty: number, zoom: number): void;
+	markViewportChanged?(): void;
+	panIntoView?(...args: unknown[]): void;
+	smartZoom?(...args: unknown[]): void;
+
 	posFromEvt(e: MouseEvent): { x: number; y: number };
 
 	undo?: () => void;

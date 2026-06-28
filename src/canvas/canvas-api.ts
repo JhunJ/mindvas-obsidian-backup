@@ -6,6 +6,7 @@ import type {
 	CanvasEdge,
 	NodeSide,
 } from "../types/canvas-internal";
+import { isMobileApp } from "../ui/mobile-utils";
 
 interface EdgeIndex {
 	/** Edges pointing TO a node (node is target) */
@@ -276,6 +277,8 @@ export class CanvasAPI {
 	 */
 	selectAndZoom(canvas: Canvas, node: CanvasNode, zoomPadding: number): void {
 		canvas.selectOnly(node);
+		// Mobile: never auto-zoom — user keeps their pan/zoom while editing.
+		if (isMobileApp()) return;
 		if (zoomPadding > 0) {
 			const cx = node.x + node.width / 2;
 			const cy = node.y + node.height / 2;
