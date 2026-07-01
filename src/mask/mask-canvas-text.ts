@@ -34,6 +34,12 @@ const PREVIEW_SELECTORS = [
 	".markdown-preview-view",
 ] as const;
 
+/** Extra preview containers for file-embed cards (.md nodes). */
+const EMBED_PREVIEW_SELECTORS = [
+	".markdown-embed-content",
+	".markdown-preview-sizer",
+] as const;
+
 const NATIVE_HIDE_SELECTORS = [
 	":scope > .canvas-node-container",
 	".markdown-preview-view",
@@ -141,18 +147,16 @@ function cleanupMaskLinkArtifacts(root: ParentNode): void {
 function collectTextCardPreviewRoots(nodeEl: HTMLElement): HTMLElement[] {
 	const roots = new Set<HTMLElement>();
 
-	for (const sel of PREVIEW_SELECTORS) {
+	for (const sel of [...PREVIEW_SELECTORS, ...EMBED_PREVIEW_SELECTORS]) {
 		nodeEl.querySelectorAll<HTMLElement>(sel).forEach((el) => roots.add(el));
 	}
 
 	const iframe = nodeEl.querySelector<HTMLIFrameElement>("iframe");
 	const iframeBody = iframe?.contentDocument?.body;
 	if (iframeBody) {
-		for (const sel of PREVIEW_SELECTORS) {
+		for (const sel of [...PREVIEW_SELECTORS, ...EMBED_PREVIEW_SELECTORS]) {
 			iframeBody.querySelectorAll<HTMLElement>(sel).forEach((el) => roots.add(el));
 		}
-		const sizer = iframeBody.querySelector<HTMLElement>(".markdown-preview-sizer");
-		if (sizer) roots.add(sizer);
 	}
 
 	const sizer = nodeEl.querySelector<HTMLElement>(".markdown-preview-sizer");
@@ -345,6 +349,23 @@ export function syncTextCardReadMask(node: CanvasNode, canvasPath: string): void
 		host.dataset.mindvasPreviewMasked = "1";
 		ensurePreviewMaskWatcher(node, content, canvasPath);
 	}
+}
+
+/**
+ * In-preview tape for any maskable card (text or file embed).
+ * Keeps native markdown + branch color — no plain-text overlay.
+ */
+export function applyCanvasNodeInPreviewMasks(
+	node: CanvasNode,
+	content: string,
+	canvasPath: string
+): boolean {
+	const host = resolveTextCardHost(node);
+	if (!host) return false;
+	cleanupStaleTextCardOverlay(host);
+	const ok = applyTextCardPreviewMasks(node, content, canvasPath);
+	host.dataset.mindvasPreviewMasked = "1";
+	return ok;
 }
 
 /** Scan live DOM — re-sync in-preview masks without replacing card content. */

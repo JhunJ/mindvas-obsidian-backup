@@ -38,6 +38,7 @@ import {
 	textCardMaskApplied,
 	textCardOverlayApplied,
 	resolveTextCardHost,
+	applyCanvasNodeInPreviewMasks,
 } from "./mask-canvas-text";
 import {
 	isTextCanvasNode,
@@ -63,6 +64,7 @@ export {
 
 import type { MaskColor } from "./mask-core";
 import { getLastMaskColor } from "./mask-colors";
+import { isMobileApp } from "../ui/mobile-utils";
 
 export function wrapCanvasSelection(
 	node: CanvasNode,
@@ -158,9 +160,10 @@ function applyInlineMasksToNode(
 	}
 
 	if (node.isEditing) return;
-	removeInlinePreview(node);
 	if (!node.nodeEl) return;
-	renderContentMaskLayer(node, content, maskKeyFor(node, canvasPath), node.nodeEl);
+	// File embeds: in-preview tape only — keep native markdown + branch color.
+	removeInlinePreview(node);
+	applyCanvasNodeInPreviewMasks(node, content, canvasPath);
 }
 
 function applyFileNodeInlineMasks(node: CanvasNode, content: string, canvasPath: string): void {
@@ -234,53 +237,11 @@ function removeWholeNodeOverlay(node: CanvasNode): void {
 	node.nodeEl?.classList.remove("mindvas-has-mask", "mindvas-mask-revealed");
 }
 
-function hideNativeCanvasContent(host: HTMLElement, preview: HTMLElement): void {
-	for (const child of Array.from(host.children)) {
-		if (child === preview) continue;
-		child.classList.add("mindvas-native-hidden");
-	}
-	setIframeVisibleFromHost(host, false);
-}
-
 function setIframeVisibleFromHost(host: HTMLElement, visible: boolean): void {
 	for (const iframe of Array.from(host.querySelectorAll<HTMLIFrameElement>("iframe"))) {
 		iframe.style.opacity = visible ? "" : "0";
 		iframe.style.pointerEvents = visible ? "" : "none";
 	}
-}
-
-function renderContentMaskLayer(
-	node: CanvasNode,
-	text: string,
-	keyForIndex: (index: number) => string,
-	host: HTMLElement
-): void {
-	host.classList.add("mindvas-has-inline-mask");
-	host.style.position = "relative";
-
-	let preview = host.querySelector(":scope > .mindvas-mask-preview") as HTMLElement | null;
-	if (!preview) {
-		preview = document.createElement("div");
-		preview.className = "mindvas-mask-preview mindvas-mask-ui";
-		host.appendChild(preview);
-	}
-	preview.replaceChildren();
-
-	for (const seg of parseInlineMasks(text)) {
-		if (seg.type === "text") {
-			if (!seg.content.trim()) continue;
-			const span = document.createElement("span");
-			span.className = "mindvas-inline-text";
-			span.textContent = markdownToPlainDisplay(seg.content);
-			preview.appendChild(span);
-		} else if (seg.index !== undefined) {
-			preview.appendChild(
-				createMaskTapeElement(seg.content, keyForIndex(seg.index), seg.color ?? "yellow")
-			);
-		}
-	}
-
-	hideNativeCanvasContent(host, preview);
 }
 
 function removeInlinePreview(node: CanvasNode): void {
@@ -551,11 +512,20 @@ export function registerCanvasMaskHandler(
 	canvasPath: string,
 	app: App
 ): () => void {
+	const mobile = isMobileApp();
+	// Debounce sync so pan/zoom (which fire requestFrame dozens of times/sec on
+	// mobile) never trigger a full node scan mid-gesture.
+	const SYNC_DEBOUNCE = mobile ? 250 : 100;
+	const GESTURE_IDLE = mobile ? 260 : 140;
+
 	let syncing = false;
-	let frameSyncPending = false;
+	let interacting = false;
+	let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+	let gestureTimer: ReturnType<typeof setTimeout> | null = null;
 
 	const runSync = () => {
-		if (syncing) return;
+		// Never scan/rewrite the DOM while the user is panning/zooming/dragging.
+		if (syncing || interacting) return;
 		syncing = true;
 		try {
 			syncCanvasMaskUI(canvas, canvasPath, app);
@@ -564,27 +534,45 @@ export function registerCanvasMaskHandler(
 		}
 	};
 
-	const refresh = () => runSync();
-	runSync();
-
-	const origRequestFrame = canvas.requestFrame.bind(canvas);
-	canvas.requestFrame = () => {
-		origRequestFrame();
-		if (frameSyncPending) return;
-		frameSyncPending = true;
-		requestAnimationFrame(() => {
-			frameSyncPending = false;
-			runSync();
-		});
-	};
-
-	let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 	const scheduleSync = () => {
 		if (debounceTimer) clearTimeout(debounceTimer);
-		debounceTimer = setTimeout(runSync, 150);
+		debounceTimer = setTimeout(() => {
+			debounceTimer = null;
+			if (interacting) {
+				scheduleSync();
+				return;
+			}
+			runSync();
+		}, SYNC_DEBOUNCE);
 	};
 
+	const refresh = () => scheduleSync();
+
+	// A pointer/wheel gesture is in progress — suppress sync until it settles.
+	const markInteracting = () => {
+		interacting = true;
+		if (gestureTimer) clearTimeout(gestureTimer);
+		gestureTimer = setTimeout(() => {
+			gestureTimer = null;
+			interacting = false;
+			scheduleSync();
+		}, GESTURE_IDLE);
+	};
+
+	const wrapper = canvas.wrapperEl;
+	const gestureOpts = { passive: true, capture: true } as AddEventListenerOptions;
+	const onGesture = () => markInteracting();
+	wrapper?.addEventListener("pointerdown", onGesture, gestureOpts);
+	wrapper?.addEventListener("pointermove", onGesture, gestureOpts);
+	wrapper?.addEventListener("pointerup", onGesture, gestureOpts);
+	wrapper?.addEventListener("wheel", onGesture, gestureOpts);
+	wrapper?.addEventListener("touchmove", onGesture, gestureOpts);
+
+	// Initial application (deferred so it doesn't block the first paint).
+	setTimeout(runSync, 0);
+
 	const observer = new MutationObserver((records) => {
+		if (interacting) return;
 		const fromMask = records.some((r) => {
 			const el = (r.target as Node).nodeType === Node.ELEMENT_NODE
 				? (r.target as HTMLElement)
@@ -597,7 +585,6 @@ export function registerCanvasMaskHandler(
 	observer.observe(canvas.wrapperEl, {
 		subtree: true,
 		childList: true,
-		characterData: true,
 	});
 
 	const onVaultChange = app.vault.on("modify", (file) => {
@@ -607,18 +594,25 @@ export function registerCanvasMaskHandler(
 		}
 	});
 
+	// Boot: apply masks a few times right after load, then stop.
 	let tick = 0;
+	const bootMax = mobile ? 8 : 16;
 	const bootInterval = window.setInterval(() => {
-		runSync();
-		scanCanvasEditingNodes(canvas.nodes.values());
-		if (++tick >= 30) window.clearInterval(bootInterval);
-	}, 400);
+		if (!interacting) {
+			runSync();
+			scanCanvasEditingNodes(canvas.nodes.values());
+		}
+		if (++tick >= bootMax) window.clearInterval(bootInterval);
+	}, mobile ? 500 : 400);
 
 	const editScanInterval = window.setInterval(() => {
+		if (interacting) return;
 		scanCanvasEditingNodes(canvas.nodes.values());
-	}, 500);
+	}, mobile ? 900 : 500);
 
+	// Idle self-heal: only re-apply masks that went missing (e.g. after rerender).
 	const maintainInterval = window.setInterval(() => {
+		if (interacting) return;
 		for (const node of canvas.nodes.values()) {
 			if (!isMaskableCanvasNode(node)) continue;
 			if (isTextCanvasNode(node) && (node.isEditing || isTextCardEditing(node))) continue;
@@ -635,16 +629,21 @@ export function registerCanvasMaskHandler(
 				ensureNodeMaskWatch(node, canvasPath, app, refresh);
 			}
 		}
-	}, 800);
+	}, mobile ? 1600 : 900);
 
 	const cleanupSelection = trackCanvasSelection(canvas);
 
 	return () => {
-		canvas.requestFrame = origRequestFrame;
 		window.clearInterval(bootInterval);
 		window.clearInterval(editScanInterval);
 		window.clearInterval(maintainInterval);
 		if (debounceTimer) clearTimeout(debounceTimer);
+		if (gestureTimer) clearTimeout(gestureTimer);
+		wrapper?.removeEventListener("pointerdown", onGesture, gestureOpts);
+		wrapper?.removeEventListener("pointermove", onGesture, gestureOpts);
+		wrapper?.removeEventListener("pointerup", onGesture, gestureOpts);
+		wrapper?.removeEventListener("wheel", onGesture, gestureOpts);
+		wrapper?.removeEventListener("touchmove", onGesture, gestureOpts);
 		observer.disconnect();
 		app.vault.offref(onVaultChange);
 		cleanupSelection();
