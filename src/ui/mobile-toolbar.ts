@@ -14,7 +14,6 @@ const TOOLBAR_ACTIONS: ToolbarAction[] = [
 	{ id: "child", icon: "plus", label: "Add child", commandId: "mindvas:mindmap-add-child" },
 	{ id: "sibling", icon: "corner-down-left", label: "Add sibling", commandId: "mindvas:mindmap-add-sibling" },
 	{ id: "fold", icon: "chevrons-down-up", label: "Toggle branch fold", commandId: "mindvas:mindmap-toggle-branch-fold" },
-	{ id: "mask", icon: "bandage", label: "가리기", commandId: "mindvas:mindmap-toggle-node-mask" },
 	{ id: "nav-left", icon: "arrow-left", label: "Navigate left", commandId: "mindvas:mindmap-nav-left" },
 	{ id: "nav-up", icon: "arrow-up", label: "Navigate up", commandId: "mindvas:mindmap-nav-prev-sibling" },
 	{ id: "nav-down", icon: "arrow-down", label: "Navigate down", commandId: "mindvas:mindmap-nav-next-sibling" },
@@ -57,7 +56,8 @@ export class MobileToolbar {
 		wrapper.appendChild(fab);
 		this.fabEl = fab;
 		this.updateFab(canvas);
-		this.setVisible(this.isMindmapActive(canvas));
+		// Always visible: image insert & masking are useful outside mindmap mode too.
+		this.setVisible(true);
 	}
 
 	private openActionMenu(anchor: HTMLElement, canvas: Canvas): void {
@@ -71,6 +71,23 @@ export class MobileToolbar {
 			item.setTitle(active ? "Disable mindmap mode" : "Enable mindmap mode")
 				.setIcon(active ? "network" : "layout-dashboard")
 				.onClick(() => commands?.executeCommandById?.("mindvas:mindmap-toggle-mode"));
+		});
+
+		// Always available — image insert + masking, regardless of mindmap mode.
+		menu.addItem((item) => {
+			item.setTitle("이미지 삽입")
+				.setIcon("image")
+				.onClick(() => commands?.executeCommandById?.("mindvas:insert-image"));
+		});
+		menu.addItem((item) => {
+			item.setTitle("가리기")
+				.setIcon("bandage")
+				.onClick(() => commands?.executeCommandById?.("mindvas:mindmap-toggle-node-mask"));
+		});
+		menu.addItem((item) => {
+			item.setTitle("마스킹 목록")
+				.setIcon("list")
+				.onClick(() => commands?.executeCommandById?.("mindvas:open-mask-panel"));
 		});
 
 		if (this.isMindmapActive(canvas)) {

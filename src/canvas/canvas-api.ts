@@ -177,6 +177,54 @@ export class CanvasAPI {
 	}
 
 	/**
+	 * Create a file/image node at a given position.
+	 */
+	createFileNode(
+		canvas: Canvas,
+		filePath: string,
+		x: number,
+		y: number,
+		width: number = 400,
+		height: number = 300
+	): CanvasNode | null {
+		const c = canvas as Canvas & {
+			createFileNode?: (opts: {
+				pos: { x: number; y: number };
+				size?: { width: number; height: number };
+				file: string;
+				focus?: boolean;
+				save?: boolean;
+			}) => CanvasNode;
+		};
+		if (typeof c.createFileNode !== "function") return null;
+		return c.createFileNode({
+			pos: { x, y },
+			size: { width, height },
+			file: filePath,
+			focus: false,
+			save: true,
+		});
+	}
+
+	/**
+	 * Canvas coordinate at the center of the visible viewport.
+	 * Used to drop new nodes where the user is currently looking.
+	 */
+	getViewportCenter(canvas: Canvas): { x: number; y: number } {
+		const c = canvas as Canvas & { tx?: number; ty?: number; zoom?: number };
+		const rect = canvas.wrapperEl?.getBoundingClientRect();
+		const zoom = c.zoom || 1;
+		const tx = c.tx ?? 0;
+		const ty = c.ty ?? 0;
+		const w = rect?.width ?? 800;
+		const h = rect?.height ?? 600;
+		return {
+			x: (w / 2 - tx) / zoom,
+			y: (h / 2 - ty) / zoom,
+		};
+	}
+
+	/**
 	 * Create an edge between two nodes using canvas.importData.
 	 */
 	createEdge(

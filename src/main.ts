@@ -17,6 +17,7 @@ import { registerSubtreeDragHandler } from "./canvas/subtree-drag";
 import { registerGroupDragHandler } from "./canvas/group-drag";
 import { getEditorElements } from "./ui/auto-resize";
 import { OutlineView, OUTLINE_VIEW_TYPE } from "./ui/outline-view";
+import { MaskPanelView, MASK_PANEL_VIEW_TYPE } from "./ui/mask-panel-view";
 import { freemindToCanvas } from "./import/freemind-import";
 import { getGroupIds, buildForest, findTreeForNode } from "./mindmap/tree-model";
 import { registerBranchFoldHandler, refreshBranchFoldUI, toggleBranchFold, collapseAllBranches, expandAllBranches } from "./mindmap/branch-fold";
@@ -25,6 +26,7 @@ import {
 	refreshCanvasMaskUI,
 	refreshAllCanvasMasks,
 	coverAllMasks,
+	revealAllMasks,
 } from "./mask/mask-canvas";
 import { buildNodeMaskMenu } from "./mask/mask-toolbar";
 import { registerNoteMaskSupport } from "./mask/mask-note";
@@ -39,6 +41,7 @@ import { applyMaskToNode } from "./mask/mask-action";
 import { MobileToolbar } from "./ui/mobile-toolbar";
 import { isMobileApp, isPhone, isTablet, syncMobileBodyClass, safeRun, ensureOutlineLeaf, expandRightSidebar } from "./ui/mobile-utils";
 import { registerMobileEditViewportLock } from "./ui/mobile-edit-viewport";
+import { insertImageToCanvas } from "./ui/image-insert";
 import { arrowShortcutExtension } from "./ui/arrow-shortcut";
 import { maskEditorExtension } from "./mask/mask-editor-extension";
 
@@ -59,6 +62,7 @@ export default class CanvasMindMapPlugin extends Plugin {
 	private cleanupInsertNodeHandler: (() => void) | null = null;
 	private interceptedCanvas: Canvas | null = null;
 	private toggleBtnEl: HTMLElement | null = null;
+	private imageBtnEl: HTMLElement | null = null;
 	private cleanupGroupBoundsHandler: (() => void) | null = null;
 	private cleanupSelectionSyncHandler: (() => void) | null = null;
 	/** Pending timers/observers/RAFs to cancel on unload or canvas switch. */
@@ -385,6 +389,36 @@ export default class CanvasMindMapPlugin extends Plugin {
 				this.refreshMask(canvas);
 			},
 		});
+
+		this.addCommand({
+			id: "mindmap-reveal-all-masks",
+			name: "전부 보이기",
+			checkCallback: (checking: boolean) => {
+				const canvas = this.canvasApi.getActiveCanvas();
+				if (!canvas) return false;
+				if (checking) return true;
+				revealAllMasks(canvas, this.getCanvasPath(canvas));
+				this.refreshMask(canvas);
+			},
+		});
+
+		this.addCommand({
+			id: "open-mask-panel",
+			name: "마스킹 목록 열기",
+			callback: () => void this.openMaskPanel(),
+		});
+
+		// ── 이미지 삽입 (모바일 + 데스크탑) ──
+		this.addCommand({
+			id: "insert-image",
+			name: "이미지 삽입",
+			checkCallback: (checking: boolean) => {
+				const canvas = this.canvasApi.getActiveCanvas();
+				if (!canvas) return false;
+				if (checking) return true;
+				insertImageToCanvas(this.app, canvas, this.canvasApi, this.getCanvasPath(canvas));
+			},
+		});
 	}
 
 	private registerWorkspaceHandlers(): void {
@@ -397,6 +431,16 @@ export default class CanvasMindMapPlugin extends Plugin {
 
 		// Register outline sidebar view
 		this.registerView(OUTLINE_VIEW_TYPE, (leaf) => new OutlineView(leaf));
+
+		// Register mask list sidebar view
+		this.registerView(
+			MASK_PANEL_VIEW_TYPE,
+			(leaf) =>
+				new MaskPanelView(
+					leaf,
+					() => this.canvasApi.getActiveCanvas() ?? this.canvasApi.getAnyCanvas()
+				)
+		);
 
 		// Show outline if a mindmap canvas is already open on startup
 		this.app.workspace.onLayoutReady(() => {
@@ -633,6 +677,10 @@ export default class CanvasMindMapPlugin extends Plugin {
 			this.toggleBtnEl.remove();
 			this.toggleBtnEl = null;
 		}
+		if (this.imageBtnEl) {
+			this.imageBtnEl.remove();
+			this.imageBtnEl = null;
+		}
 	}
 
 	/**
@@ -717,6 +765,10 @@ export default class CanvasMindMapPlugin extends Plugin {
 			if (this.toggleBtnEl) {
 				this.toggleBtnEl.remove();
 				this.toggleBtnEl = null;
+			}
+			if (this.imageBtnEl) {
+				this.imageBtnEl.remove();
+				this.imageBtnEl = null;
 			}
 			this.hideOutline();
 			return;
@@ -991,7 +1043,7 @@ export default class CanvasMindMapPlugin extends Plugin {
 			if (isPhone()) this.mobileToolbar?.setVisible(true);
 		} else {
 			this.hideOutline();
-			if (isPhone()) this.mobileToolbar?.setVisible(false);
+			if (isPhone()) this.mobileToolbar?.setVisible(true);
 		}
 	}
 
@@ -1439,6 +1491,26 @@ export default class CanvasMindMapPlugin extends Plugin {
 	private refreshMask(canvas: Canvas): void {
 		refreshCanvasMaskUI(canvas, this.getCanvasPath(canvas), this.app);
 		canvas.requestFrame();
+		this.refreshMaskPanel();
+	}
+
+	private refreshMaskPanel(): void {
+		for (const leaf of this.app.workspace.getLeavesOfType(MASK_PANEL_VIEW_TYPE)) {
+			const view = leaf.view;
+			if (view instanceof MaskPanelView) view.refreshFromActive();
+		}
+	}
+
+	private async openMaskPanel(): Promise<void> {
+		const existing = this.app.workspace.getLeavesOfType(MASK_PANEL_VIEW_TYPE);
+		const leaf = existing[0] ?? this.app.workspace.getRightLeaf(false);
+		if (!leaf) return;
+		if (leaf.view?.getViewType() !== MASK_PANEL_VIEW_TYPE) {
+			await leaf.setViewState({ type: MASK_PANEL_VIEW_TYPE, active: true });
+		}
+		expandRightSidebar(this.app);
+		await this.app.workspace.revealLeaf(leaf);
+		this.refreshMaskPanel();
 	}
 
 	private toggleMindmapMode(canvas: Canvas): void {
@@ -1460,7 +1532,7 @@ export default class CanvasMindMapPlugin extends Plugin {
 		} else {
 			this.hideOutline();
 			refreshBranchFoldUI(canvas, this.layoutEngine, () => false);
-			if (isPhone()) this.mobileToolbar?.setVisible(false);
+			if (isPhone()) this.mobileToolbar?.setVisible(true);
 		}
 
 		this.updateToggleButton(canvas);
@@ -1468,10 +1540,14 @@ export default class CanvasMindMapPlugin extends Plugin {
 	}
 
 	private injectToggleButton(canvas: Canvas): void {
-		// Remove previous button
+		// Remove previous buttons
 		if (this.toggleBtnEl) {
 			this.toggleBtnEl.remove();
 			this.toggleBtnEl = null;
+		}
+		if (this.imageBtnEl) {
+			this.imageBtnEl.remove();
+			this.imageBtnEl = null;
 		}
 
 		const controls = canvas.view.containerEl.querySelector('.canvas-controls');
@@ -1488,6 +1564,20 @@ export default class CanvasMindMapPlugin extends Plugin {
 		controls.prepend(btn);
 		this.toggleBtnEl = btn;
 		this.updateToggleButton(canvas);
+
+		// Image insert button — phones use the FAB menu instead.
+		if (!isPhone()) {
+			const imgBtn = document.createElement('div');
+			imgBtn.addClass('mindvas-image-btn', 'clickable-icon');
+			imgBtn.setAttribute('aria-label', '이미지 삽입');
+			setIcon(imgBtn, 'image');
+			this.registerDomEvent(imgBtn, 'click', (e) => {
+				e.stopPropagation();
+				insertImageToCanvas(this.app, canvas, this.canvasApi, this.getCanvasPath(canvas));
+			});
+			controls.prepend(imgBtn);
+			this.imageBtnEl = imgBtn;
+		}
 	}
 
 	private updateToggleButton(canvas: Canvas): void {

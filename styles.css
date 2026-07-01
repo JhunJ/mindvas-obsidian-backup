@@ -13,6 +13,129 @@
 	color: var(--interactive-accent);
 }
 
+.mindvas-image-btn {
+	color: var(--text-muted);
+}
+
+.mindvas-image-btn:hover {
+	color: var(--text-normal);
+}
+
+/* ── Mask list panel ── */
+.mindvas-mask-filter-bar {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	padding: 8px;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.mindvas-mask-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	padding: 3px 9px;
+	border-radius: 12px;
+	font-size: var(--font-ui-smaller);
+	cursor: pointer;
+	background: var(--background-secondary);
+	color: var(--text-muted);
+	opacity: 0.5;
+	user-select: none;
+}
+
+.mindvas-mask-chip.is-active {
+	opacity: 1;
+	color: var(--text-normal);
+}
+
+.mindvas-mask-dot {
+	width: 10px;
+	height: 10px;
+	border-radius: 50%;
+	flex: 0 0 auto;
+}
+
+.mindvas-mask-list {
+	padding: 6px 8px 24px;
+	overflow-y: auto;
+}
+
+.mindvas-mask-empty {
+	color: var(--text-faint);
+	text-align: center;
+	padding: 24px 8px;
+	font-size: var(--font-ui-small);
+}
+
+.mindvas-mask-group {
+	margin-bottom: 12px;
+}
+
+.mindvas-mask-group-header {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 4px 2px;
+	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-semibold);
+	color: var(--text-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.03em;
+}
+
+.mindvas-mask-group-count {
+	margin-left: auto;
+	background: var(--background-modifier-border);
+	color: var(--text-muted);
+	border-radius: 8px;
+	padding: 0 7px;
+	font-size: var(--font-ui-smaller);
+}
+
+.mindvas-mask-item {
+	border-left: 3px solid var(--background-modifier-border);
+	background: var(--background-secondary);
+	border-radius: 4px;
+	padding: 6px 8px;
+	margin: 4px 0;
+	cursor: pointer;
+}
+
+.mindvas-mask-item:hover {
+	background: var(--background-modifier-hover);
+}
+
+.mindvas-mask-item-text {
+	font-size: var(--font-ui-small);
+	color: var(--text-normal);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.mindvas-mask-item-meta {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	margin-top: 2px;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-faint);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.mindvas-mask-item-icon {
+	display: inline-flex;
+	align-items: center;
+}
+
+.mindvas-mask-item-icon .svg-icon {
+	width: 13px;
+	height: 13px;
+}
+
 /* Smooth node repositioning animation */
 .canvas-node.mindmap-animating {
 	transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
